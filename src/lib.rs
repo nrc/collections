@@ -1,3 +1,3 @@
-#![feature(heap_api)]
+#![feature(heap_api, core_intrinsics)]
 
 pub mod stack;

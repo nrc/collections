@@ -1,3 +1,6 @@
+// A stack implemented using an array (well, not even a proper array, but pointer
+// offsets).
+
 use std::mem;
 use std::ptr;
 use std::rt::heap;
@@ -9,13 +12,9 @@ pub struct Stack<T> {
 }
 
 // TODO
-// valgrind the tests
-//   cargo test --no-run
-// drop allocated data + test
 // resizing
 // use Unique
 // ZSTs
-// Send and Sync
 // overflow of length
 
 impl<T> Stack<T> {
@@ -83,9 +82,12 @@ fn allocate<U>(capacity: usize) -> *mut U {
 
 impl<T> Drop for Stack<T> {
     fn drop(&mut self) {
-        // TODO how to call drop on the contents?
-        // loop over contents, use drop_in_place
         unsafe {
+            for i in 0..self.length {
+                let ptr = self.data.offset(i as isize);
+                ::std::intrinsics::drop_in_place(ptr);           
+            }
+
             heap::deallocate(self.data as *mut u8,
                              self.capacity * mem::size_of::<T>(),
                              mem::align_of::<T>())
@@ -145,5 +147,30 @@ mod test {
             assert!(s.len() == i);
         }
         assert!(s.len() == 0);
+    }
+
+    // Test that the dtors of our contents get called.
+    #[test]
+    fn test_drop() {
+        static mut DROP_COUNT: u32 = 0;
+        struct TestDrop;
+        impl Drop for TestDrop {
+            fn drop(&mut self) {
+                unsafe {
+                    DROP_COUNT += 1;
+                }
+            }
+        }
+
+        {
+            let mut s = Stack::new();
+            for _ in 0..32 {
+                s.push(TestDrop);
+            }
+            assert!(s.len() == 32);
+        }
+        unsafe {
+            assert!(DROP_COUNT == 32);
+        }
     }
 }
