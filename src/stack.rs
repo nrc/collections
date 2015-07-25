@@ -12,13 +12,15 @@ pub struct Stack<T> {
 }
 
 // TODO
-// resizing
+// Debug and Display impls
 // use Unique
+// Zero capacity
 // ZSTs
 // overflow of length
 
 impl<T> Stack<T> {
     pub fn with_capacity(capacity: usize) -> Stack<T> {
+        assert!(capacity > 0);
         Stack {
             data: allocate::<T>(capacity),
             length: 0,
@@ -68,15 +70,38 @@ impl<T> Stack<T> {
     }
 
     fn resize(&mut self, capacity: usize) {
-        // TODO
+        if capacity == self.capacity {
+            // Nothing to do.
+            return;
+        }
+
+        if capacity < self.capacity {
+            panic!("Shrinking is not yet supported");
+        }
+
+        let size = capacity * mem::size_of::<T>();
+        assert!(size > 0);
+
+        unsafe {
+            let new_data = heap::reallocate(self.data as *mut u8,
+                                            self.capacity,
+                                            size,
+                                            mem::align_of::<T>());
+            if new_data.is_null() {
+                panic!("Could not resize Stack.");
+            }
+            self.data = new_data as *mut T;
+            self.capacity = capacity;
+        }
     }
 }
 
 #[inline]
 fn allocate<U>(capacity: usize) -> *mut U {
-    let elem_size = mem::size_of::<U>();
+    let size = capacity * mem::size_of::<U>();
+    assert!(size > 0);
     unsafe {
-        heap::allocate(capacity * elem_size, mem::align_of::<U>()) as *mut U
+        heap::allocate(size, mem::align_of::<U>()) as *mut U
     }
 }
 
@@ -135,6 +160,23 @@ mod test {
     #[test]
     fn push_many() {
         let mut s = Stack::new();
+        for i in 0..32 {
+            s.push(i);
+        }
+        assert!(s.len() == 32);
+
+        for i in 0..32 {
+            let i = 31 - i;
+            assert!(s.peek() == &i);
+            assert!(s.pop() == i);
+            assert!(s.len() == i);
+        }
+        assert!(s.len() == 0);
+    }
+
+    #[test]
+    fn push_with_resize() {
+        let mut s = Stack::with_capacity(4);
         for i in 0..32 {
             s.push(i);
         }
