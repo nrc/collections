@@ -11,7 +11,6 @@ pub struct Stack<T> {
 }
 
 // TODO
-// Clone, Eq, Default
 // Zero capacity
 // ZSTs
 // overflow of length
@@ -94,8 +93,6 @@ impl<T> Stack<T> {
     }
 }
 
-impl<T> !Sync for Stack<T> {}
-
 impl<T> fmt::Debug for Stack<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         write!(f, "Stack {{ length: {}, capacity: {} }}", self.length, self.capacity)
@@ -136,6 +133,50 @@ impl<T> Drop for Stack<T> {
         }
     }
 }
+
+impl<T> Default for Stack<T> {
+    fn default() -> Stack<T> {
+        Stack::new()
+    }
+}
+
+impl<T:Clone> Clone for Stack<T> {
+    fn clone(&self) -> Stack<T> {
+        let mut result = Stack::with_capacity(self.capacity);
+        unsafe {
+            for i in 0..self.length {
+                let result_ptr = result.data.offset(i as isize);
+                let ptr = self.data.offset(i as isize);
+                *result_ptr = (*ptr).clone();
+            }
+            result.length = self.length;
+        }
+        result
+    }
+}
+
+impl<T: PartialEq> PartialEq for Stack<T> {
+    fn eq(&self, other: &Stack<T>) -> bool {
+        if self.length != other.length {
+            return false;
+        }
+
+        unsafe {
+            for i in 0..self.length {
+                let other_ptr = other.data.offset(i as isize);
+                let ptr = self.data.offset(i as isize);
+                if *other_ptr != *ptr {
+                    return false;
+                }
+            }
+        }
+
+        true        
+    }
+}
+
+impl<T: Eq> Eq for Stack<T> {}
+
 
 #[inline]
 fn allocate<U>(capacity: usize) -> *mut U {
@@ -255,4 +296,15 @@ mod test {
         // FIXME: should test that at least Display gives the expected result.
     }
 
+    // Test the Default, Eq, and Clone traits.
+    #[test]
+    fn test_traits() {
+        let mut s1 = Stack::default();
+        s1.push(42);
+        s1.push(43);
+        let s2 = s1.clone();
+        assert!(s1 == s2);
+        s1.pop();
+        assert!(s1 != s2);        
+    }
 }
