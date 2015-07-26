@@ -6,14 +6,13 @@ use std::ptr;
 use std::rt::heap;
 
 pub struct Stack<T> {
-    data: *mut T,
+    data: ptr::Unique<T>,
     length: usize,
     capacity: usize,
 }
 
 // TODO
 // Debug and Display impls
-// use Unique
 // Zero capacity
 // ZSTs
 // overflow of length
@@ -22,7 +21,7 @@ impl<T> Stack<T> {
     pub fn with_capacity(capacity: usize) -> Stack<T> {
         assert!(capacity > 0);
         Stack {
-            data: allocate::<T>(capacity),
+            data: unsafe { ptr::Unique::new(allocate::<T>(capacity)) },
             length: 0,
             capacity: capacity,
         }
@@ -83,18 +82,21 @@ impl<T> Stack<T> {
         assert!(size > 0);
 
         unsafe {
-            let new_data = heap::reallocate(self.data as *mut u8,
+            let new_data = heap::reallocate(self.data.get_mut() as *mut T as *mut u8,
                                             self.capacity,
                                             size,
                                             mem::align_of::<T>());
             if new_data.is_null() {
                 panic!("Could not resize Stack.");
             }
-            self.data = new_data as *mut T;
+            self.data = ptr::Unique::new(new_data as *mut T);
             self.capacity = capacity;
         }
     }
 }
+
+impl<T> !Sync for Stack<T> {}
+
 
 #[inline]
 fn allocate<U>(capacity: usize) -> *mut U {
@@ -113,7 +115,7 @@ impl<T> Drop for Stack<T> {
                 ::std::intrinsics::drop_in_place(ptr);           
             }
 
-            heap::deallocate(self.data as *mut u8,
+            heap::deallocate(self.data.get_mut() as *mut T as *mut u8,
                              self.capacity * mem::size_of::<T>(),
                              mem::align_of::<T>())
         }
