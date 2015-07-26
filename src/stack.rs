@@ -1,8 +1,7 @@
 // A stack implemented using an array (well, not even a proper array, but pointer
 // offsets).
 
-use std::mem;
-use std::ptr;
+use std::{mem, ptr, fmt};
 use std::rt::heap;
 
 pub struct Stack<T> {
@@ -12,7 +11,7 @@ pub struct Stack<T> {
 }
 
 // TODO
-// Debug and Display impls
+// Clone, Eq, Default
 // Zero capacity
 // ZSTs
 // overflow of length
@@ -97,13 +96,29 @@ impl<T> Stack<T> {
 
 impl<T> !Sync for Stack<T> {}
 
+impl<T> fmt::Debug for Stack<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        write!(f, "Stack {{ length: {}, capacity: {} }}", self.length, self.capacity)
+    }
+}
 
-#[inline]
-fn allocate<U>(capacity: usize) -> *mut U {
-    let size = capacity * mem::size_of::<U>();
-    assert!(size > 0);
-    unsafe {
-        heap::allocate(size, mem::align_of::<U>()) as *mut U
+impl<T: fmt::Display> fmt::Display for Stack<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        try!(write!(f, "["));
+        let mut first = true;
+        for i in 0..self.length {
+            if first {
+                first = false;
+            } else {
+                try!(write!(f, ", "));
+            }
+
+            unsafe {
+                let ptr = self.data.offset(i as isize);
+                try!(write!(f, "{}", *ptr));
+            }
+        }
+        write!(f, "]")
     }
 }
 
@@ -121,6 +136,16 @@ impl<T> Drop for Stack<T> {
         }
     }
 }
+
+#[inline]
+fn allocate<U>(capacity: usize) -> *mut U {
+    let size = capacity * mem::size_of::<U>();
+    assert!(size > 0);
+    unsafe {
+        heap::allocate(size, mem::align_of::<U>()) as *mut U
+    }
+}
+
 
 #[cfg(test)]
 mod test {
@@ -217,4 +242,17 @@ mod test {
             assert!(DROP_COUNT == 32);
         }
     }
+
+    #[test]
+    fn test_print() {
+        let mut s = Stack::with_capacity(8);
+        for i in 0..8 {
+            s.push(i);
+        }
+        assert!(s.len() == 8);
+        println!("Debug: {:?}", s);
+        println!("Display: {}", s);
+        // FIXME: should test that at least Display gives the expected result.
+    }
+
 }
