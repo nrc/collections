@@ -6,19 +6,24 @@ use std::rt::heap;
 
 pub struct Stack<T> {
     // Invariants:
-    //   length <= capacity
-    //   data points to length valid elements.
+    //   element is zero sized -> capacity == 0 else
+    //     length <= capacity
+    //   element is zero sized -> data points to null else
+    //     data points to length valid elements.
     data: ptr::Unique<T>,
     length: usize,
     capacity: usize,
 }
 
 // TODO
-// ZSTs
 // overflow of length
 
 impl<T> Stack<T> {
-    pub fn with_capacity(capacity: usize) -> Stack<T> {
+    pub fn with_capacity(mut capacity: usize) -> Stack<T> {
+        if Self::element_is_zero_sized() {
+            capacity = 0;
+        }
+
         Stack {
             data: unsafe { ptr::Unique::new(if capacity == 0 {
                     ptr::null_mut()
@@ -58,7 +63,8 @@ impl<T> Stack<T> {
             self.resize(new_capacity);
         }
 
-        assert!(self.length < self.capacity, "No space in stack; should have been resized");
+        assert!(Self::element_is_zero_sized() || self.length < self.capacity,
+                "No space in stack; should have been resized");
 
         unsafe {
             let ptr = self.data.offset(self.length as isize);
@@ -71,8 +77,14 @@ impl<T> Stack<T> {
         self.length
     }
 
+    fn element_is_zero_sized() -> bool {
+        mem::size_of::<T>() == 0
+    }
+
     fn new_capacity(&self) -> usize {
-        if self.capacity == 0 {
+        if Self::element_is_zero_sized() {
+            0
+        } else if self.capacity == 0 {
             4
         } else {
             self.capacity * 2
@@ -344,6 +356,33 @@ mod test {
         let mut s = Stack::<i32>::with_capacity(0);
         s.push(42);
         assert!(s.pop() == 42);
+        assert!(s.len() == 0);
+    }
+
+    #[test]
+    fn test_zero_sized() {
+        use std::fmt;
+        #[derive(PartialEq, Debug)]
+        struct ZeroSized;
+        impl fmt::Display for ZeroSized {
+            fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+                write!(f, "foo")
+            }
+        }
+
+        assert!(Stack::<ZeroSized>::element_is_zero_sized());
+
+        let mut s = Stack::new();
+        for _ in 0..100 {
+            s.push(ZeroSized);
+        }
+        assert!(s.len() == 100);
+        assert!(*s.peek() == ZeroSized);
+        println!("Debug: {:?}", s);
+        println!("Display: {}", s);
+        for _ in 0..100 {
+            assert!(s.pop() == ZeroSized);
+        }
         assert!(s.len() == 0);
     }
 }
