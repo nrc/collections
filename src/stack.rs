@@ -5,21 +5,26 @@ use std::{mem, ptr, fmt};
 use std::rt::heap;
 
 pub struct Stack<T> {
+    // Invariants:
+    //   length <= capacity
+    //   data points to length valid elements.
     data: ptr::Unique<T>,
     length: usize,
     capacity: usize,
 }
 
 // TODO
-// Zero capacity
 // ZSTs
 // overflow of length
 
 impl<T> Stack<T> {
     pub fn with_capacity(capacity: usize) -> Stack<T> {
-        assert!(capacity > 0);
         Stack {
-            data: unsafe { ptr::Unique::new(allocate::<T>(capacity)) },
+            data: unsafe { ptr::Unique::new(if capacity == 0 {
+                    ptr::null_mut()
+                } else {
+                    allocate::<T>(capacity)                    
+                })},
             length: 0,
             capacity: capacity,
         }
@@ -49,7 +54,7 @@ impl<T> Stack<T> {
 
     pub fn push(&mut self, datum: T) {
         if self.length == self.capacity {
-            let new_capacity = self.capacity * 2;
+            let new_capacity = self.new_capacity();
             self.resize(new_capacity);
         }
 
@@ -66,6 +71,14 @@ impl<T> Stack<T> {
         self.length
     }
 
+    fn new_capacity(&self) -> usize {
+        if self.capacity == 0 {
+            4
+        } else {
+            self.capacity * 2
+        }
+    }
+
     fn resize(&mut self, capacity: usize) {
         if capacity == self.capacity {
             // Nothing to do.
@@ -76,14 +89,30 @@ impl<T> Stack<T> {
             panic!("Shrinking is not yet supported");
         }
 
+        // If capacity was 0, then we are allocating for the first time,
+        // otherwise we reallocate.
+        if self.capacity == 0 {
+            unsafe {
+                self.data = ptr::Unique::new(allocate(capacity));
+                self.capacity = capacity;
+            }
+
+            return;
+        }
+
         let size = capacity * mem::size_of::<T>();
         assert!(size > 0);
 
         unsafe {
-            let new_data = heap::reallocate(self.data.get_mut() as *mut T as *mut u8,
-                                            self.capacity,
-                                            size,
-                                            mem::align_of::<T>());
+            let new_data = if self.capacity == 0 {
+                allocate(size)
+            } else {
+                heap::reallocate(self.data.get_mut() as *mut T as *mut u8,
+                                 self.capacity,
+                                 size,
+                                 mem::align_of::<T>())
+            };
+
             if new_data.is_null() {
                 panic!("Could not resize Stack.");
             }
@@ -127,9 +156,11 @@ impl<T> Drop for Stack<T> {
                 ::std::intrinsics::drop_in_place(ptr);           
             }
 
-            heap::deallocate(self.data.get_mut() as *mut T as *mut u8,
-                             self.capacity * mem::size_of::<T>(),
-                             mem::align_of::<T>())
+            if self.capacity > 0 {
+                heap::deallocate(self.data.get_mut() as *mut T as *mut u8,
+                                 self.capacity * mem::size_of::<T>(),
+                                 mem::align_of::<T>())
+            }
         }
     }
 }
@@ -306,5 +337,13 @@ mod test {
         assert!(s1 == s2);
         s1.pop();
         assert!(s1 != s2);        
+    }
+
+    #[test]
+    fn test_zero_capacity() {
+        let mut s = Stack::<i32>::with_capacity(0);
+        s.push(42);
+        assert!(s.pop() == 42);
+        assert!(s.len() == 0);
     }
 }
