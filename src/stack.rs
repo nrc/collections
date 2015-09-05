@@ -16,6 +16,9 @@ pub struct Stack<T> {
 }
 
 // TODO
+// Can't use null ptr for data since Unique => non-null
+// check for drop flags in dtor
+// shouldn't allocate > isize::MAX
 // overflow of length
 
 impl<T> Stack<T> {
@@ -227,6 +230,8 @@ fn allocate<U>(capacity: usize) -> *mut U {
     assert!(size > 0);
     unsafe {
         heap::allocate(size, mem::align_of::<U>()) as *mut U
+
+        // TODO check for returned null
     }
 }
 
