@@ -49,29 +49,31 @@ impl<T> Stack<T> {
     pub fn try_pop(&self) -> Option<T> {
         unsafe {
             let _l = self.lock.lock().unwrap();
-            let head = self.head.get();
             let len = self.len.get();
             if *len == 0 {
                 return None;
             }
-            *len -= 1;
-            let Node { datum, next } = *(*head).take().unwrap();
-            *head = next;
-            Some(datum)
+            Some(self.internal_pop())
         }        
     }
 
     pub fn pop(&self) -> T {
         unsafe {
             let _l = self.lock.lock().unwrap();
-            let head = self.head.get();
-            let len = self.len.get();
-            assert!(*len > 0);
-            *len -= 1;
-            let Node { datum, next } = *(*head).take().unwrap();
-            *head = next;
-            datum
+            assert!(*self.len.get() > 0);
+            self.internal_pop()
         }
+    }
+
+    // Unsafe, pop requires the caller to hold the lock and to ensure that there
+    // is something to pop.
+    unsafe fn internal_pop(&self) -> T {
+        let head = self.head.get();
+        let len = self.len.get();
+        *len -= 1;
+        let Node { datum, next } = *(*head).take().unwrap();
+        *head = next;
+        datum
     }
 }
 
