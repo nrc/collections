@@ -2,7 +2,7 @@
 // offsets).
 
 use std::{mem, ptr, fmt};
-use std::rt::heap;
+use alloc::heap;
 
 pub struct Stack<T> {
     // Invariants:

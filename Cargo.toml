@@ -5,3 +5,6 @@ version = "0.0.1"
 authors = ["Nicholas Cameron <nrc@ncameron.org>"]
 description = "Messing around with collections"
 repository = "https://github.com/nrc/collections"
+
+[dependencies]
+crossbeam = "0.1.4"

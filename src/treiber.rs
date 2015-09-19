@@ -1,10 +1,17 @@
-// Treiber's stack - a lock free, concurrent stack
-// TODO make it concurrent and do the fancy lock free stuff.
+// Treiber's stack - a lock free, concurrent stack.
+
+// TODO do the fancy lock free stuff.
+
+use std::cell::UnsafeCell;
+use std::sync::Mutex;
 
 pub struct Stack<T> {
-    len: usize,
-    head: Option<Box<Node<T>>>,
+    len: UnsafeCell<usize>,
+    head: UnsafeCell<Option<Box<Node<T>>>>,
+    lock: Mutex<i32>,
 }
+
+unsafe impl<T> Sync for Stack<T> {}
 
 struct Node<T> {
     datum: T,
@@ -14,46 +21,77 @@ struct Node<T> {
 impl<T> Stack<T> {
     pub fn new() -> Stack<T> {
         Stack {
-            len: 0,
-            head: None,
+            len: UnsafeCell::new(0),
+            head: UnsafeCell::new(None),
+            lock: Mutex::new(0),
         }
     }
 
     pub fn len(&self) -> usize {
-        self.len
+        unsafe {
+            let _l = self.lock.lock().unwrap();
+            *self.len.get()
+        }
     }
 
-    pub fn push(&mut self, datum: T) {
-        self.len += 1;
-        self.head = Some(Box::new(Node {
-            datum: datum,
-            next: self.head.take()
-        }));
+    pub fn push(&self, datum: T) {
+        unsafe {
+            let _l = self.lock.lock().unwrap();
+            let head = self.head.get();
+            *self.len.get() += 1;
+            *head = Some(Box::new(Node {
+                datum: datum,
+                next: (*head).take()
+            }));
+        }
     }
 
-    pub fn pop(&mut self) -> T {
-        assert!(self.len > 0);
-        self.len -= 1;
-        let Node { datum, next } = *self.head.take().unwrap();
-        self.head = next;
-        datum
+    pub fn try_pop(&self) -> Option<T> {
+        unsafe {
+            let _l = self.lock.lock().unwrap();
+            let head = self.head.get();
+            let len = self.len.get();
+            if *len == 0 {
+                return None;
+            }
+            *len -= 1;
+            let Node { datum, next } = *(*head).take().unwrap();
+            *head = next;
+            Some(datum)
+        }        
+    }
+
+    pub fn pop(&self) -> T {
+        unsafe {
+            let _l = self.lock.lock().unwrap();
+            let head = self.head.get();
+            let len = self.len.get();
+            assert!(*len > 0);
+            *len -= 1;
+            let Node { datum, next } = *(*head).take().unwrap();
+            *head = next;
+            datum
+        }
     }
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
+    use crossbeam::scope;
+    use std::sync::Mutex;
+    use std::thread::yield_now;
 
     #[test]
     #[should_panic]
     fn test_push_pop_empty() {
-        let mut s: Stack<usize> = Stack::new();
+        let s: Stack<usize> = Stack::new();
         s.pop();
     }
 
     #[test]
     fn test_push_pop() {
-        let mut s = Stack::new();
+        let s = Stack::new();
         assert!(s.len() == 0);
         s.push(42);
         assert!(s.len() == 1);
@@ -63,7 +101,7 @@ mod test {
 
     #[test]
     fn test_push_pop_3() {
-        let mut s = Stack::new();
+        let s = Stack::new();
         assert!(s.len() == 0);
         s.push(42);
         s.push(43);
@@ -73,5 +111,50 @@ mod test {
         assert!(s.pop() == 43);
         assert!(s.pop() == 42);
         assert!(s.len() == 0);
+    }
+
+    #[test]
+    fn test_push_try_pop_empty() {
+        let s: Stack<usize> = Stack::new();
+        assert!(s.try_pop().is_none());
+    }
+
+    #[test]
+    fn test_push_try_pop_3() {
+        let s = Stack::new();
+        assert!(s.len() == 0);
+        s.push(42);
+        s.push(43);
+        s.push(44);
+        assert!(s.len() == 3);
+        assert!(s.try_pop().unwrap() == 44);
+        assert!(s.try_pop().unwrap() == 43);
+        assert!(s.try_pop().unwrap() == 42);
+        assert!(s.len() == 0);
+    }
+
+    #[test]
+    fn test_parallel() {
+        let s = Stack::new();
+        let sum = Mutex::new(0);
+        scope(|sc| {
+            for _ in 0..10 {
+                sc.spawn(|| {
+                    let mut local_sum = 0;
+                    for i in 0..1000 {
+                        s.push(i);
+                        let mut v = s.try_pop();
+                        while v.is_none() {
+                            yield_now();
+                            v = s.try_pop();
+                        }
+                        local_sum += v.unwrap();
+                    }
+                    println!("{}", local_sum);
+                    *sum.lock().unwrap() += local_sum;
+                });
+            }
+        });
+        assert!(*sum.lock().unwrap() == 4995000);
     }
 }
